@@ -1,2 +1,2 @@
 # image_outline_recognition
-Computer Vision
+Computer Vision course project
