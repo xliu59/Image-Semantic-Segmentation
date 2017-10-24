@@ -1,2 +1,2 @@
-# Image_Outline_Recognition
-Computer Vision course project
+# Image Semantic Segmentaion
+A Computer Vision course project
