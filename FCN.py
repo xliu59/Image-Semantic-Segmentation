@@ -10,6 +10,7 @@ from torchvision import transforms, utils
 import os
 import os.path as osp
 import argparse
+from __future__ import print_function
 
 import numpy as np
 from PIL import Image
@@ -41,6 +42,7 @@ parser.add_argument('-l', '--load', type=str, help='load the model weights')
 args = parser.parse_args()
 args.cuda = not args.disable_cuda and torch.cuda.is_available()
 
+class_num = 21
 
 class VOC12(Dataset):
     def __init__(self, root_dir, txt_file, input_transform=None, target_transform=None):
@@ -241,7 +243,7 @@ torch.manual_seed(1)
 # load pretrained vgg16 network
 vgg16 = models.vgg16(pretrained=True)
 # fcn_32 instance
-model = fcn_32()
+model = fcn_32(class_num=class_num)
 # copy params from vgg16
 model.transfer_from_vgg16(vgg16)
 if args.cuda:
@@ -283,26 +285,71 @@ def train(epoch):
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
 
+
+# evaluation tools
+def _fast_hist(label_true, label_pred, n_class):
+    mask = (label_true >= 0) & (label_true < n_class)
+    hist = np.bincount(
+        n_class * label_true[mask].astype(int) +
+        label_pred[mask], minlength=n_class ** 2).reshape(n_class, n_class)
+    return hist
+
+
+def label_accuracy_score(label_trues, label_preds, n_class=21):
+    """Returns accuracy score evaluation result.
+      - overall accuracy
+      - mean accuracy
+      - mean IU
+      - fwavacc
+    """
+    hist = np.zeros((n_class, n_class))
+    for lt, lp in zip(label_trues, label_preds):
+        hist += _fast_hist(lt.flatten(), lp.flatten(), n_class)
+    acc = np.diag(hist).sum() / hist.sum()
+    acc_cls = np.diag(hist) / hist.sum(axis=1)
+    acc_cls = np.nanmean(acc_cls)
+    iu = np.diag(hist) / (hist.sum(axis=1) + hist.sum(axis=0) - np.diag(hist))
+    mean_iu = np.nanmean(iu)
+    freq = hist.sum(axis=1) / hist.sum()
+    fwavacc = (freq[freq > 0] * iu[freq > 0]).sum()
+    return acc, acc_cls, mean_iu, fwavacc
+
+
 def test():
     model.eval()
     test_loss = 0
     correct = 0
+    label_trues, label_preds = [], []
     for data, target in test_loader:
         if args.cuda:
             data, target = data.cuda(), target.cuda()
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
         test_loss += cross_entropy2d(output, target, size_average=False).data[0] # sum up batch loss
-        dist = F.pairwise_distance(output, target)  # TODO: test if this criterion is ok.
-        if dist < args.threshold:
-            correct += 1
+        # dist = F.pairwise_distance(output, target)  # TODO: test if this criterion is ok.
+        # if dist < args.threshold:
+        #     correct += 1
+        imgs = data.data.cpu()
+        lbl_pred = score.data.max(1)[1].cpu().numpy()[:, :, :]
+        lbl_true = target.data.cpu()
+        for img, lt, lp in zip(imgs, lbl_true, lbl_pred):
+            img, lt = val_loader.dataset.untransform(img, lt)
+            label_trues.append(lt)
+            label_preds.append(lp)
+        # TODO: visualization
+    # test_loss /= len(test_loader.dataset)
+    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+    #     test_loss, correct, len(test_loader.dataset),
+    #     100. * correct / len(test_loader.dataset)))
 
-    test_loss /= len(test_loader.dataset)
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
-
-
+    metrics = label_accuracy_score( label_trues, label_preds, n_class=class_num )
+    metrics = np.array(metrics)
+    metrics *= 100
+    print('''\
+    Accuracy: {0}
+    Accuracy Class: {1}
+    Mean IU: {2}
+    FWAV Accuracy: {3}'''.format(*metrics))
 
 
 
