@@ -26,6 +26,8 @@ parser.add_argument('-tb', '--test_batch_size', type=int, default=1,
                     metavar='N', help='test mini-batch size (default: 1)')
 parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float,
                     metavar='LR', help='initial learning rate')
+parser.add_argument('-t', '--threshold', default=0.1, type=float,
+                    metavar='TH', help='threshold for prediction')
 parser.add_argument('--disable_cuda', action='store_true', default=False,
                     help='Disable CUDA')
 parser.add_argument('--disable_training', action='store_true', default=False,
@@ -291,8 +293,9 @@ def test():
         data, target = Variable(data, volatile=True), Variable(target)
         output = model(data)
         test_loss += cross_entropy2d(output, target, size_average=False).data[0] # sum up batch loss
-        pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
-        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+        dist = F.pairwise_distance(output, target)  # TODO: test if this criterion is ok.
+        if dist < args.threshold:
+            correct += 1
 
     test_loss /= len(test_loader.dataset)
     print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
