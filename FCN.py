@@ -1,18 +1,44 @@
 import torch
-from torch import autograd
 from torch.autograd import Variable
+from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
-import torchvision
-from PIL import Image
-import matplotlib.pyplot as plt
-import os.path as osp
-import numpy as np
-import os
 import torch.nn.functional as F
+import torchvision
 import torchvision.models as models
 from torchvision import transforms, utils
+
+import os
+import os.path as osp
+import argparse
+
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
 import scipy
-from torch.utils.data import Dataset, DataLoader
+
+
+parser = argparse.ArgumentParser(description="Save or load models.")
+parser.add_argument('-e', '--epoch', type=int, default=100,
+                    help='Number of iteration over the dataset to train')
+parser.add_argument('-b', '--batch_size', type=int, default=64,
+                    metavar='N', help='mini-batch size (default: 128)')
+parser.add_argument('-tb', '--test_batch_size', type=int, default=1,
+                    metavar='N', help='test mini-batch size (default: 1)')
+parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float,
+                    metavar='LR', help='initial learning rate')
+parser.add_argument('--disable_cuda', action='store_true', default=False,
+                    help='Disable CUDA')
+parser.add_argument('--disable_training', action='store_true', default=False,
+                    help='Disable training')
+parser.add_argument('--enable_testing', action='store_true', default=False,
+                    help='Enable testing')
+parser.add_argument('--log_interval', type=int, default=10, metavar='N',
+                    help='how many batches to wait before logging training status')
+parser.add_argument('-s', '--save', type=str, help='save the model weights')
+parser.add_argument('-l', '--load', type=str, help='load the model weights')
+args = parser.parse_args()
+args.cuda = not args.disable_cuda and torch.cuda.is_available()
+
 
 class VOC12(Dataset):
     def __init__(self, root_dir, txt_file, input_transform=None, target_transform=None):
@@ -98,6 +124,18 @@ def get_upsampling_weight(in_channels, out_channels, kernel_size):
     weight[range(in_channels), range(out_channels), :, :] = filt
     return torch.from_numpy(weight).float()
 
+
+trans = transforms.Compose([transforms.Scale((227,227)),transforms.ToTensor()])
+train_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
+train_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt'
+train_set = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
+train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8)
+# TODO: divide train and test set
+test_set = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
+test_loader = DataLoader(train_set, batch_size=args.test_batch_size, shuffle=True, num_workers=8)
+# trainset.show_pair(50)
+
+
 class fcn_32(nn.Module):
     def __init__(self, class_num=21):
         super(fcn_32, self).__init__()
@@ -148,7 +186,7 @@ class fcn_32(nn.Module):
             # fully convolutional 1
             nn.Conv2d(512, 4096, 7),
             nn.ReLU(inplace=True),
-            nn.Dropout2d(),
+            nn.Dropout2d(),  # TODO: Does dropout probability matter?
 
             # fully convolutional 2
             nn.Conv2d(4096, 4096, 1),
@@ -196,42 +234,83 @@ class fcn_32(nn.Module):
                 l2.weight.data = l1.weight.data.view(l2.weight.size())
                 l2.bias.data = l1.bias.data.view(l2.bias.size())
 
-trans = transforms.Compose([transforms.Scale((227,227)),transforms.ToTensor()])
-train_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
-train_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt'
-trainset = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
-trainloader = DataLoader(trainset, batch_size=1, shuffle=True, num_workers=2)
-trainset.show_pair(50)
 
-def train():
-    # if torch.cuda.is_available:
-    #     model = fcn_32().cuda()
-    # else:
-    model = fcn_32()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
-    for epoch in range(1):  # loop over the dataset multiple times
-        for i, data in enumerate(trainloader):
-            images = data['image']
-            labels = data['label']
-            # images = Variable(images)
-            # label = Variable(label)
-            # wrap them in Variable
-            # if torch.cuda.is_available:
-            #     images, labels = Variable(images.cuda()), Variable(labels.cuda())
-            # else:
-            images, labels = Variable(images), Variable(labels)
-            # zero the parameter gradients
-            optimizer.zero_grad()
-            # forward + backward + optimize
-            images = model(images)
-            labels = labels.type('torch.LongTensor')
-            loss =  cross_entropy2d(images, labels)
-            loss.backward()
-            optimizer.step()
-            if i == 0:
-                break
+torch.manual_seed(1)
+# load pretrained vgg16 network
+vgg16 = models.vgg16(pretrained=True)
+# fcn_32 instance
+model = fcn_32()
+# copy params from vgg16
+model.transfer_from_vgg16(vgg16)
+if args.cuda:
+    torch.cuda.manual_seed(1)
+    model.cuda()
+
+if args.load:
+    load_path = args.load
+    print('Loading weights from {}'.format(load_path))
+    model.load_state_dict(torch.load(load_path))
 
 
-if __name__=='__main__':
-    vgg16 = models.vgg16(pretrained=True)
-    train()
+# TODO: is ADAM really the best?
+# TODO: maybe adjust learning rate in training? http://pytorch.org/docs/master/optim.html#how-to-adjust-learning-rate
+optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+
+
+def train(epoch):
+    model.train()
+    for i, data in enumerate(train_loader):
+        images = data['image']
+        labels = data['label']
+        images, labels = Variable(images), Variable(labels)
+        if args.cuda:
+            images, labels = images.cuda(), labels.cuda()
+        # zero the parameter gradients
+        optimizer.zero_grad()
+        # forward + backward + optimize
+        output = model(images)
+        labels = labels.type('torch.LongTensor')
+        loss =  cross_entropy2d(output, labels)  # TODO: find out the difference between this and F.cross_entropy. Seems identical.
+        loss /= len(output)  # normalizing when training in batches
+        if np.isnan(float(loss.data[0])):
+            raise ValueError('loss is nan while training')
+        loss.backward()
+        optimizer.step()
+        if i % args.log_interval == 0:
+            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                epoch, i * len(images), len(train_loader.dataset),
+                       100. * i / len(train_loader), loss.data[0]))
+
+def test():
+    model.eval()
+    test_loss = 0
+    correct = 0
+    for data, target in test_loader:
+        if args.cuda:
+            data, target = data.cuda(), target.cuda()
+        data, target = Variable(data, volatile=True), Variable(target)
+        output = model(data)
+        test_loss += F.nll_loss(output, target, size_average=False).data[0] # sum up batch loss
+        pred = output.data.max(1, keepdim=True)[1] # get the index of the max log-probability
+        correct += pred.eq(target.data.view_as(pred)).cpu().sum()
+
+    test_loss /= len(test_loader.dataset)
+    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+        test_loss, correct, len(test_loader.dataset),
+        100. * correct / len(test_loader.dataset)))
+
+
+
+
+
+for epoch in range(1):  # loop over the dataset multiple times
+    if not args.disable_training:
+        train(epoch)
+    if args.enable_testing:
+        test()
+
+
+if args.save is not None:
+    save_path = args.save
+    print('Saving weights at {}'.format(save_path))
+    torch.save(model.state_dict(), save_path)
