@@ -95,6 +95,24 @@ class VOC12(Dataset):
         plt.tight_layout()
         plt.axis('off')
 
+    # def transform(self, img, lbl):
+    #     img = img[:, :, ::-1]  # RGB -> BGR
+    #     img = img.astype(np.float64)
+    #     img -= self.mean_bgr
+    #     img = img.transpose(2, 0, 1)
+    #     img = torch.from_numpy(img).float()
+    #     lbl = torch.from_numpy(lbl).long()
+    #     return img, lbl
+
+    def untransform(self, img, lbl):  # TODO
+        img = img.numpy()
+        img = img.transpose(1, 2, 0)
+        # img += self.mean_bgr
+        img = img.astype(np.uint8)
+        # img = img[:, :, ::-1]
+        lbl = lbl.numpy()
+        return img, lbl
+
 def cross_entropy2d(input, target, weight=None, size_average=True):
     # input: (n, c, h, w), target: (n, h, w)
     n, c, h, w = input.size()
