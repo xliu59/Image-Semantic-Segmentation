@@ -10,7 +10,7 @@ from torchvision import transforms, utils
 import os
 import os.path as osp
 import argparse
-# from __future__ import print_function
+from __future__ import print_function
 
 import numpy as np
 from PIL import Image
@@ -21,27 +21,24 @@ import scipy
 parser = argparse.ArgumentParser(description="Save or load models.")
 parser.add_argument('-e', '--epoch', type=int, default=10,
                     help='Number of iteration over the dataset to train')
-parser.add_argument('-b', '--batch_size', type=int, default=12,
+parser.add_argument('-b', '--batch_size', type=int, default=16,
                     metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('-tb', '--test_batch_size', type=int, default=12,
                     metavar='N', help='test mini-batch size (default: 1)')
 parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float,
                     metavar='LR', help='initial learning rate')
-parser.add_argument('-t', '--threshold', default=0.1, type=float,
-                    metavar='TH', help='threshold for prediction')
 parser.add_argument('--disable_cuda', action='store_true', default=False,
                     help='Disable CUDA')
 parser.add_argument('--disable_training', action='store_true', default=False,
                     help='Disable training')
 parser.add_argument('--enable_testing', action='store_true', default=False,
                     help='Enable testing')
-parser.add_argument('--log_interval', type=int, default=10, metavar='N',
+parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('-s', '--save', type=str, help='save the model weights')
 parser.add_argument('-l', '--load', type=str, help='load the model weights')
 args = parser.parse_args()
 args.cuda = not args.disable_cuda and torch.cuda.is_available()
-
 class_num = 21
 
 class VOC12(Dataset):
@@ -303,7 +300,6 @@ def label_accuracy_score(label_trues, label_preds, n_class=21):
 
 def test():
     model.eval()
-    test_loss = 0
     label_trues, label_preds = [], []
     print('Start testing')
     for i, data in enumerate(test_loader):
@@ -314,12 +310,9 @@ def test():
         if args.cuda:
             images, labels = images.cuda(), labels.cuda()
         output = model(images)
-        # test_loss += cross_entropy2d(output, labels, size_average=False).data[0] # sum up batch loss
         imgs = images.data.cpu()
-        # print(output.size())
         # lbl_pred = output.data.max(1)[1].cpu().numpy()[:, :, :]
         lbl_pred = output.data.max(1)[1].cpu()
-        print(np.bincount(lbl_pred[1].numpy().flatten()))
         lbl_true = labels.data.cpu()
         for img, lt, lp in zip(imgs, lbl_true, lbl_pred):
             # test_loader.dataset.visualization(img, lt, lp)
@@ -327,20 +320,16 @@ def test():
             lp = lp.numpy()
             label_trues.append(lt)
             label_preds.append(lp)
-        # TODO: visualization
-    # test_loss /= len(test_loader.dataset)
-    # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-    #     test_loss, correct, len(test_loader.dataset),
-    #     100. * correct / len(test_loader.dataset)))
-    print(np.shape(label_trues), np.shape(label_preds))
-    metrics = label_accuracy_score( label_trues, label_preds, n_class=class_num )
-    metrics = np.array(metrics)
-    metrics *= 100
-    print('''\
-    Accuracy: {0}
-    Accuracy Class: {1}
-    Mean IU: {2}
-    FWAV Accuracy: {3}'''.format(*metrics))
+        if i % args.log_interval == 0:
+            #print(np.shape(label_trues), np.shape(label_preds))
+            metrics = label_accuracy_score( label_trues, label_preds, n_class=class_num )
+            metrics = np.array(metrics)
+            metrics *= 100
+            print('''\
+            Accuracy: {0}
+            Accuracy Class: {1}
+            Mean IU: {2}
+            FWAV Accuracy: {3}'''.format(*metrics))
 
 if __name__ == "__main__":
 
@@ -372,10 +361,8 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(load_path))
 
     for epoch in range(1):  # loop over the dataset multiple times
-        args.enable_testing = True
-        args.cuda = False
-        # if not args.disable_training:
-        #     train(epoch)
+        if not args.disable_training:
+             train(epoch)
         if args.enable_testing:
             test()
 
