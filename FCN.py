@@ -10,7 +10,7 @@ from torchvision import transforms, utils
 import os
 import os.path as osp
 import argparse
-from __future__ import print_function
+# from __future__ import print_function
 
 import numpy as np
 from PIL import Image
@@ -19,9 +19,9 @@ import scipy
 
 
 parser = argparse.ArgumentParser(description="Save or load models.")
-parser.add_argument('-e', '--epoch', type=int, default=100,
+parser.add_argument('-e', '--epoch', type=int, default=10,
                     help='Number of iteration over the dataset to train')
-parser.add_argument('-b', '--batch_size', type=int, default=64,
+parser.add_argument('-b', '--batch_size', type=int, default=12,
                     metavar='N', help='mini-batch size (default: 128)')
 parser.add_argument('-tb', '--test_batch_size', type=int, default=1,
                     metavar='N', help='test mini-batch size (default: 1)')
@@ -74,7 +74,11 @@ class VOC12(Dataset):
     def __readfile__(self, txt_file):
         name_list = []
         with open(txt_file, 'r') as f:
+            # i = 0
             for line in f:
+                # i = i+1
+                # if i == 24:
+                #     break
                 data = line.strip()
                 data = data.split(' ')
                 name_list.append(data[0])
@@ -95,16 +99,17 @@ class VOC12(Dataset):
         plt.tight_layout()
         plt.axis('off')
 
-    # def transform(self, img, lbl):
-    #     img = img[:, :, ::-1]  # RGB -> BGR
-    #     img = img.astype(np.float64)
-    #     img -= self.mean_bgr
-    #     img = img.transpose(2, 0, 1)
-    #     img = torch.from_numpy(img).float()
-    #     lbl = torch.from_numpy(lbl).long()
-    #     return img, lbl
+    def transform(self, img, lbl):
+        img = img[:, :, ::-1]  # RGB -> BGR
+        img = img.astype(np.float64)
+        img -= self.mean_bgr
+        img = img.transpose(2, 0, 1)
+        img = torch.from_numpy(img).float()
+        lbl = torch.from_numpy(lbl).long()
+        return img, lbl
 
     def untransform(self, img, lbl):  # TODO
+        # jm: img transpose to 227*227*12, lables doesn't change
         img = img.numpy()
         img = img.transpose(1, 2, 0)
         # img += self.mean_bgr
@@ -151,10 +156,10 @@ trans = transforms.Compose([transforms.Scale((227,227)),transforms.ToTensor()])
 train_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
 train_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt'
 train_set = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
-train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=8)
+train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
 # TODO: divide train and test set
 test_set = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
-test_loader = DataLoader(train_set, batch_size=args.test_batch_size, shuffle=True, num_workers=8)
+test_loader = DataLoader(train_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
 # trainset.show_pair(50)
 
 
@@ -264,9 +269,9 @@ vgg16 = models.vgg16(pretrained=True)
 model = fcn_32(class_num=class_num)
 # copy params from vgg16
 model.transfer_from_vgg16(vgg16)
-if args.cuda:
-    torch.cuda.manual_seed(1)
-    model.cuda()
+# if args.cuda:
+#     torch.cuda.manual_seed(1)
+#     model.cuda()
 
 if args.load:
     load_path = args.load
@@ -285,8 +290,8 @@ def train(epoch):
         images = data['image']
         labels = data['label']
         images, labels = Variable(images), Variable(labels)
-        if args.cuda:
-            images, labels = images.cuda(), labels.cuda()
+        # if args.cuda:
+        #     images, labels = images.cuda(), labels.cuda()
         # zero the parameter gradients
         optimizer.zero_grad()
         # forward + backward + optimize
@@ -336,20 +341,19 @@ def label_accuracy_score(label_trues, label_preds, n_class=21):
 def test():
     model.eval()
     test_loss = 0
-    correct = 0
     label_trues, label_preds = [], []
-    for data, target in test_loader:
+    print('Start testing')
+    for i, data in enumerate(test_loader):
+        images = data['image']
+        labels = data['label']
+        images, labels = Variable(images, volatile=True), Variable(labels)
         if args.cuda:
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data, volatile=True), Variable(target)
-        output = model(data)
-        test_loss += cross_entropy2d(output, target, size_average=False).data[0] # sum up batch loss
-        # dist = F.pairwise_distance(output, target)  # TODO: test if this criterion is ok.
-        # if dist < args.threshold:
-        #     correct += 1
-        imgs = data.data.cpu()
+            images, labels = images.cuda(), labels.cuda()
+        output = model(images)
+        # test_loss += cross_entropy2d(output, labels, size_average=False).data[0] # sum up batch loss
+        imgs = images.data.cpu()
         lbl_pred = output.data.max(1)[1].cpu().numpy()[:, :, :]
-        lbl_true = target.data.cpu()
+        lbl_true = labels.data.cpu()
         for img, lt, lp in zip(imgs, lbl_true, lbl_pred):
             img, lt = test_loader.dataset.untransform(img, lt)
             label_trues.append(lt)
@@ -372,8 +376,10 @@ def test():
 
 
 for epoch in range(1):  # loop over the dataset multiple times
-    if not args.disable_training:
-        train(epoch)
+    # if not args.disable_training:
+    #     train(epoch)
+    args.enable_testing = True
+    args.cuda = False
     if args.enable_testing:
         test()
 
