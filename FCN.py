@@ -23,7 +23,7 @@ parser.add_argument('-e', '--epoch', type=int, default=10,
                     help='Number of iteration over the dataset to train')
 parser.add_argument('-b', '--batch_size', type=int, default=12,
                     metavar='N', help='mini-batch size (default: 128)')
-parser.add_argument('-tb', '--test_batch_size', type=int, default=1,
+parser.add_argument('-tb', '--test_batch_size', type=int, default=12,
                     metavar='N', help='test mini-batch size (default: 1)')
 parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float,
                     metavar='LR', help='initial learning rate')
@@ -50,7 +50,6 @@ class VOC12(Dataset):
         self.root_dir = root_dir
         self.input_transform = input_transform
         self.target_transform = target_transform
-
     def __len__(self):
         return len(self.name_list)
 
@@ -74,11 +73,11 @@ class VOC12(Dataset):
     def __readfile__(self, txt_file):
         name_list = []
         with open(txt_file, 'r') as f:
-            # i = 0
+            i = 0
             for line in f:
-                # i = i+1
-                # if i == 24:
-                #     break
+                i = i+1
+                if i == 24:
+                    break
                 data = line.strip()
                 data = data.split(' ')
                 name_list.append(data[0])
@@ -99,24 +98,22 @@ class VOC12(Dataset):
         plt.tight_layout()
         plt.axis('off')
 
-    def transform(self, img, lbl):
-        img = img[:, :, ::-1]  # RGB -> BGR
-        img = img.astype(np.float64)
-        img -= self.mean_bgr
-        img = img.transpose(2, 0, 1)
-        img = torch.from_numpy(img).float()
-        lbl = torch.from_numpy(lbl).long()
-        return img, lbl
-
-    def untransform(self, img, lbl):  # TODO
-        # jm: img transpose to 227*227*12, lables doesn't change
-        img = img.numpy()
-        img = img.transpose(1, 2, 0)
-        # img += self.mean_bgr
-        img = img.astype(np.uint8)
-        # img = img[:, :, ::-1]
-        lbl = lbl.numpy()
-        return img, lbl
+    def visualization(self, img, lbl, lp):  # TODO
+        # jm: img transpose to PIL.image, lbl doesn't change
+        img = np.array(transforms.ToPILImage()(img))
+        lbl = np.array(transforms.ToPILImage()(lbl))
+        # print(np.bincount(lp.numpy().flatten()))
+        lp = lp.numpy().astype(np.uint8)
+        # print(np.shape(lp),np.shape(lbl))
+        plt.subplot(131)
+        plt.imshow(img, interpolation='nearest')
+        plt.subplot(132)
+        plt.imshow(lbl[:,:], interpolation='nearest', vmin = 0, vmax = 24)
+        plt.subplot(133)
+        plt.imshow(lp[:,:], interpolation='nearest', vmin = 0, vmax = 24)
+        plt.show()
+        plt.tight_layout()
+        plt.axis('off')
 
 def cross_entropy2d(input, target, weight=None, size_average=True):
     # input: (n, c, h, w), target: (n, h, w)
@@ -150,17 +147,6 @@ def get_upsampling_weight(in_channels, out_channels, kernel_size):
                       dtype=np.float64)
     weight[range(in_channels), range(out_channels), :, :] = filt
     return torch.from_numpy(weight).float()
-
-
-trans = transforms.Compose([transforms.Scale((227,227)),transforms.ToTensor()])
-train_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
-train_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt'
-train_set = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
-train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
-# TODO: divide train and test set
-test_set = VOC12(train_data_root_dir, train_data_txt_dir,input_transform=trans, target_transform=trans)
-test_loader = DataLoader(train_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
-# trainset.show_pair(50)
 
 
 class fcn_32(nn.Module):
@@ -199,7 +185,7 @@ class fcn_32(nn.Module):
             nn.ReLU(inplace=True),
             nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/16
 
-            # conv4
+            # conv5
             nn.Conv2d(512, 512, 3, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(512, 512, 3, padding=1),
@@ -261,37 +247,17 @@ class fcn_32(nn.Module):
                 l2.weight.data = l1.weight.data.view(l2.weight.size())
                 l2.bias.data = l1.bias.data.view(l2.bias.size())
 
-
-torch.manual_seed(1)
-# load pretrained vgg16 network
-vgg16 = models.vgg16(pretrained=True)
-# fcn_32 instance
-model = fcn_32(class_num=class_num)
-# copy params from vgg16
-model.transfer_from_vgg16(vgg16)
-# if args.cuda:
-#     torch.cuda.manual_seed(1)
-#     model.cuda()
-
-if args.load:
-    load_path = args.load
-    print('Loading weights from {}'.format(load_path))
-    model.load_state_dict(torch.load(load_path))
-
-
-# TODO: is ADAM really the best?
-# TODO: maybe adjust learning rate in training? http://pytorch.org/docs/master/optim.html#how-to-adjust-learning-rate
-optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-
-
 def train(epoch):
     model.train()
+    # TODO: is ADAM really the best?
+    # TODO: maybe adjust learning rate in training? http://pytorch.org/docs/master/optim.html#how-to-adjust-learning-rate
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     for i, data in enumerate(train_loader):
         images = data['image']
         labels = data['label']
         images, labels = Variable(images), Variable(labels)
-        # if args.cuda:
-        #     images, labels = images.cuda(), labels.cuda()
+        if args.cuda:
+            images, labels = images.cuda(), labels.cuda()
         # zero the parameter gradients
         optimizer.zero_grad()
         # forward + backward + optimize
@@ -308,13 +274,10 @@ def train(epoch):
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
 
-
 # evaluation tools
 def _fast_hist(label_true, label_pred, n_class):
     mask = (label_true >= 0) & (label_true < n_class)
-    hist = np.bincount(
-        n_class * label_true[mask].astype(int) +
-        label_pred[mask], minlength=n_class ** 2).reshape(n_class, n_class)
+    hist = np.bincount(n_class * label_true[mask].astype(int) + label_pred[mask], minlength=n_class ** 2).reshape(n_class, n_class)
     return hist
 
 
@@ -347,15 +310,21 @@ def test():
         images = data['image']
         labels = data['label']
         images, labels = Variable(images, volatile=True), Variable(labels)
+        # print(images.size(), labels.size())
         if args.cuda:
             images, labels = images.cuda(), labels.cuda()
         output = model(images)
         # test_loss += cross_entropy2d(output, labels, size_average=False).data[0] # sum up batch loss
         imgs = images.data.cpu()
-        lbl_pred = output.data.max(1)[1].cpu().numpy()[:, :, :]
+        # print(output.size())
+        # lbl_pred = output.data.max(1)[1].cpu().numpy()[:, :, :]
+        lbl_pred = output.data.max(1)[1].cpu()
+        print(np.bincount(lbl_pred[1].numpy().flatten()))
         lbl_true = labels.data.cpu()
         for img, lt, lp in zip(imgs, lbl_true, lbl_pred):
-            img, lt = test_loader.dataset.untransform(img, lt)
+            # test_loader.dataset.visualization(img, lt, lp)
+            lt = lt.numpy()
+            lp = lp.numpy()
             label_trues.append(lt)
             label_preds.append(lp)
         # TODO: visualization
@@ -363,7 +332,7 @@ def test():
     # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
     #     test_loss, correct, len(test_loader.dataset),
     #     100. * correct / len(test_loader.dataset)))
-
+    print(np.shape(label_trues), np.shape(label_preds))
     metrics = label_accuracy_score( label_trues, label_preds, n_class=class_num )
     metrics = np.array(metrics)
     metrics *= 100
@@ -373,18 +342,45 @@ def test():
     Mean IU: {2}
     FWAV Accuracy: {3}'''.format(*metrics))
 
+if __name__ == "__main__":
+
+    trans = transforms.Compose([transforms.Scale((227, 227)), transforms.ToTensor()])
+    train_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
+    train_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt'
+    train_set = VOC12(train_data_root_dir, train_data_txt_dir, input_transform=trans, target_transform=trans)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
+    test_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
+    test_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/val.txt'
+    test_set = VOC12(test_data_root_dir, test_data_txt_dir, input_transform=trans, target_transform=trans)
+    test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
+    # train_set.show_pair(10)
+
+    torch.manual_seed(1)
+    # load pretrained vgg16 network
+    vgg16 = models.vgg16(pretrained=True)
+    # fcn_32 instance
+    model = fcn_32(class_num=class_num)
+    # copy params from vgg16
+    model.transfer_from_vgg16(vgg16)
+    # if args.cuda:
+    #     torch.cuda.manual_seed(1)
+    #     model.cuda()
+
+    if args.load:
+        load_path = args.load
+        print('Loading weights from {}'.format(load_path))
+        model.load_state_dict(torch.load(load_path))
+
+    for epoch in range(1):  # loop over the dataset multiple times
+        args.enable_testing = True
+        args.cuda = False
+        # if not args.disable_training:
+        #     train(epoch)
+        if args.enable_testing:
+            test()
 
 
-for epoch in range(1):  # loop over the dataset multiple times
-    # if not args.disable_training:
-    #     train(epoch)
-    args.enable_testing = True
-    args.cuda = False
-    if args.enable_testing:
-        test()
-
-
-if args.save is not None:
-    save_path = args.save
-    print('Saving weights at {}'.format(save_path))
-    torch.save(model.state_dict(), save_path)
+    if args.save is not None:
+        save_path = args.save
+        print('Saving weights at {}'.format(save_path))
+        torch.save(model.state_dict(), save_path)
