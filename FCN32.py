@@ -23,8 +23,8 @@ parser.add_argument('-e', '--epoch', type=int, default=10,
                     help='Number of iteration over the dataset to train')
 parser.add_argument('-b', '--batch_size', type=int, default=16,
                     metavar='N', help='mini-batch size (default: 128)')
-parser.add_argument('-tb', '--test_batch_size', type=int, default=12,
-                    metavar='N', help='test mini-batch size (default: 1)')
+parser.add_argument('-tb', '--test_batch_size', type=int, default=16,
+                    metavar='N', help='test mini-batch size (default: 16)')
 parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--disable_cuda', action='store_true', default=False,
@@ -313,24 +313,24 @@ def test():
         # lbl_pred = output.data.max(1)[1].cpu().numpy()[:, :, :]
         lbl_pred = output.data.max(1)[1].cpu()
         lbl_true = labels.data.cpu()
-        #print("bincount pre:",np.bincount(lbl_pred.numpy().flatten()))
-        #print("bincount true:",np.bincount((lbl_true.type('torch.LongTensor').numpy()+1).flatten()))
+        # if i==0:
+        #     print("bincount pre:",np.bincount(lbl_pred.numpy().flatten()))
+        #     print("bincount true:",np.bincount(lbl_true.type('torch.LongTensor').numpy().flatten()))
         for img, lt, lp in zip(imgs, lbl_true, lbl_pred):
             # test_loader.dataset.visualization(img, lt, lp)
             lt = lt.numpy()
             lp = lp.numpy()
             label_trues.append(lt)
             label_preds.append(lp)
-        if i % args.log_interval == 0:
             #print(np.shape(label_trues), np.shape(label_preds))
-            metrics = label_accuracy_score( label_trues, label_preds, n_class=class_num )
-            metrics = np.array(metrics)
-            metrics *= 100
-            print('''\
-            Accuracy: {0}
-            Accuracy Class: {1}
-            Mean IU: {2}
-            FWAV Accuracy: {3}'''.format(*metrics))
+    metrics = label_accuracy_score(label_trues, label_preds, n_class=class_num )
+    metrics = np.array(metrics)
+    metrics *= 100
+    print('''\
+    Accuracy: {0}
+    Accuracy Class: {1}
+    Mean IU: {2}
+    FWAV Accuracy: {3}'''.format(*metrics))
 
 if __name__ == "__main__":
 
