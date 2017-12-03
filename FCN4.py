@@ -207,7 +207,7 @@ class fcn_4(nn.Module):
 
         self.upscore2 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
         self.upscore4 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
-        self.upscore8 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
+        self.upscore8_ = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
         self.upscore = nn.ConvTranspose2d(class_num, class_num, 8, stride=4, bias=False)
 
         self._initialize_weights()
@@ -276,7 +276,7 @@ class fcn_4(nn.Module):
 
         h = upscore_pool4 + score_pool3c  # 1/8
         # spatial size 38
-        h = self.upscore8(h)
+        h = self.upscore8_(h)
         # spatial size
         upscore_pool8 = h
 
