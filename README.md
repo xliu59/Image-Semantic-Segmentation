@@ -20,4 +20,6 @@ b. Training only with pretrained vgg:      ./FCN.py --save 8.pkl --enable_testin
 a. rewrite the network, the previous one cannot be extended to FCN16 or FCN8<br />
 b. add normalization after totensor()<br />
 c. change the image size to 224 as this is the size works best for vgg? NOT SURE!!!<br />
-d. loss is saved as txt files automatially, such as 32_trainingloss.txt 16_trainingloss_16.txt.
+d. loss is saved as txt files automatially, such as 32_trainingloss.txt 16_trainingloss_16.txt.<br />
+e. Change the final upsampling layer, seems to work fine!
+
