@@ -16,7 +16,7 @@ import argparse
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
-import FCN32
+import FCN8
 
 
 parser = argparse.ArgumentParser(description="Save or load models.")
@@ -146,9 +146,9 @@ def get_upsampling_weight(in_channels, out_channels, kernel_size):
     return torch.from_numpy(weight).float()
 
 
-class fcn_16(nn.Module):
+class fcn_4(nn.Module):
     def __init__(self, class_num=21):
-        super(fcn_16, self).__init__()
+        super(fcn_4, self).__init__()
         # conv1
         self.conv1_1 = nn.Conv2d(3, 64, 3, padding=100)
         self.relu1_1 = nn.ReLU(inplace=True)
@@ -190,9 +190,6 @@ class fcn_16(nn.Module):
         self.relu5_3 = nn.ReLU(inplace=True)
         self.pool5 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/32
 
-        # self.score_fr = nn.Conv2d(4096, class_num, 1)
-        # self.upscore = nn.ConvTranspose2d(class_num, class_num, 64, stride=32, bias=False)
-
         # fc6
         self.fc6 = nn.Conv2d(512, 4096, 7)
         self.relu6 = nn.ReLU(inplace=True)
@@ -204,12 +201,15 @@ class fcn_16(nn.Module):
         self.drop7 = nn.Dropout2d()
 
         self.score_fr = nn.Conv2d(4096, class_num, 1)
+        self.score_pool2 = nn.Conv2d(128, class_num, 1)
+        self.score_pool3 = nn.Conv2d(256, class_num, 1)
         self.score_pool4 = nn.Conv2d(512, class_num, 1)
 
         self.upscore2 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
-        #output spatial size 18
-        self.upscore16 = nn.ConvTranspose2d(class_num, class_num, 32, stride=16, bias=False)
-        # output spatial size 304
+        self.upscore4 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
+        self.upscore8 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
+        self.upscore = nn.ConvTranspose2d(class_num, class_num, 8, stride=4, bias=False)
+
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -220,7 +220,8 @@ class fcn_16(nn.Module):
                     m.bias.data.zero_()
             if isinstance(m, nn.ConvTranspose2d):
                 assert m.kernel_size[0] == m.kernel_size[1]
-                initial_weight = get_upsampling_weight(m.in_channels, m.out_channels, m.kernel_size[0])
+                initial_weight = get_upsampling_weight(
+                    m.in_channels, m.out_channels, m.kernel_size[0])
                 m.weight.data.copy_(initial_weight)
 
     def forward(self, x):
@@ -232,20 +233,18 @@ class fcn_16(nn.Module):
         h = self.relu2_1(self.conv2_1(h))
         h = self.relu2_2(self.conv2_2(h))
         h = self.pool2(h)
+        pool2 = h
 
         h = self.relu3_1(self.conv3_1(h))
         h = self.relu3_2(self.conv3_2(h))
         h = self.relu3_3(self.conv3_3(h))
         h = self.pool3(h)
+        pool3 = h  # 1/8
 
         h = self.relu4_1(self.conv4_1(h))
         h = self.relu4_2(self.conv4_2(h))
         h = self.relu4_3(self.conv4_3(h))
         h = self.pool4(h)
-
-        # h = self.upscore(h)
-        # h = h[:, :, 31:31 + x.size()[2], 31:31 + x.size()[3]].contiguous()
-
         pool4 = h  # 1/16
 
         h = self.relu5_1(self.conv5_1(h))
@@ -267,13 +266,44 @@ class fcn_16(nn.Module):
         h = h[:, :, 5:5 + upscore2.size()[2], 5:5 + upscore2.size()[3]]
         score_pool4c = h  # 1/16
 
-        h = upscore2 + score_pool4c
+        h = upscore2 + score_pool4c  # 1/16
+        h = self.upscore4(h)
+        upscore_pool4 = h  # 1/8
 
-        h = self.upscore16(h)
+        h = self.score_pool3(pool3)
+        h = h[:, :,9:9 + upscore_pool4.size()[2],9:9 + upscore_pool4.size()[3]]
+        score_pool3c = h  # 1/8
 
+        h = upscore_pool4 + score_pool3c  # 1/8
+        # spatial size 38
+        h = self.upscore8(h)
+        # spatial size
+        upscore_pool8 = h
+
+        h = self.score_pool2(pool2)
+        h = h[:, :, 14:14 + upscore_pool8.size()[2], 14:14 + upscore_pool8.size()[3]]
+        score_pool2c = h
+
+        h = upscore_pool8 + score_pool2c  # 1/8
+        # spatial size 38
+        h = self.upscore(h)
+        # spatial size 312
         h = h[:, :, 40:40 + x.size()[2], 40:40 + x.size()[3]].contiguous()
 
         return h
+
+    def copy_params_from_fcn8(self, fcn8):
+        for name, l1 in fcn8.named_children():
+            try:
+                l2 = getattr(self, name)
+                l2.weight  # skip ReLU / Dropout
+            except Exception:
+                continue
+            assert l1.weight.size() == l2.weight.size()
+            l2.weight.data.copy_(l1.weight.data)
+            if l1.bias is not None:
+                assert l1.bias.size() == l2.bias.size()
+                l2.bias.data.copy_(l1.bias.data)
 
     def transfer_from_vgg16(self, vgg16):
         features = [
@@ -294,7 +324,7 @@ class fcn_16(nn.Module):
             self.conv5_1, self.relu5_1,
             self.conv5_2, self.relu5_2,
             self.conv5_3, self.relu5_3,
-            self.pool5,
+            self.pool5
         ]
         for l1, l2 in zip(vgg16.features, features):
             if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
@@ -308,17 +338,6 @@ class fcn_16(nn.Module):
             l2.weight.data = l1.weight.data.view(l2.weight.size())
             l2.bias.data = l1.bias.data.view(l2.bias.size())
 
-    def copy_params_from_fcn32(self, fcn32):
-        for name, l1 in fcn32.named_children():
-            try:
-                l2 = getattr(self, name)
-                l2.weight  # skip ReLU / Dropout
-            except Exception:
-                continue
-            assert l1.weight.size() == l2.weight.size()
-            assert l1.bias.size() == l2.bias.size()
-            l2.weight.data = l1.weight.data
-            l2.bias.data = l1.bias.data
 
 def train(epoch):
     model.train()
@@ -350,8 +369,8 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
-        if (i == (len(train_loader) - 1)):
-            training_loss = 'FCN16_trainloss.txt'
+        if (i==(len(train_loader)-1)):
+            training_loss = 'FCN4_trainloss.txt'
             with open(training_loss, 'a') as f:
                 for i in range(0, len(plot_x)):
                     f.write(" ".join([str(plot_x[i]), str(plot_y[i])]))
@@ -437,17 +456,17 @@ if __name__ == "__main__":
         # load pretrained fcn_32 network
         load_path = args.load
         print('Load weights at {}'.format(load_path))
-        fcn_32 = FCN32.fcn_32(class_num=class_num)
-        fcn_32.load_state_dict(torch.load(load_path))
+        fcn_8 = FCN8.fcn_8(class_num=class_num)
+        fcn_8.load_state_dict(torch.load(load_path))
         # fcn_16 instance
-        model = fcn_16(class_num=class_num)
+        model = fcn_4(class_num=class_num)
         # copy params from vgg16
-        model.copy_params_from_fcn32(fcn_32)
+        model.copy_params_from_fcn8(fcn_8)
     else:
         # load pretrained vgg16 network
         vgg16 = models.vgg16(pretrained=True)
         # fcn_32 instance
-        model = fcn_16(class_num=class_num)
+        model = fcn_4(class_num=class_num)
         # copy params from vgg16
         model.transfer_from_vgg16(vgg16)
 

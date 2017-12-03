@@ -346,7 +346,7 @@ def train(epoch):
         # labels = labels.type('torch.LongTensor').cuda()
         loss =  cross_entropy2d(output, labels)  # TODO: find out the difference between this and F.cross_entropy. Seems identical.
         loss /= len(output)  # normalizing when training in batches
-        plot_x.append(len(plot_x) + 1)
+        plot_x.append(len(plot_x)*epoch + 1)
         plot_y.append(loss.data[0])
         if np.isnan(float(loss.data[0])):
             raise ValueError('loss is nan while training')
@@ -356,7 +356,7 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
-        if (i==len(train_loader)):
+        if (i==(len(train_loader)-1)):
             training_loss = 'FCN8_trainloss.txt'
             with open(training_loss, 'a') as f:
                 for i in range(0, len(plot_x)):

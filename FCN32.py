@@ -292,6 +292,8 @@ def train(epoch):
     # TODO: is ADAM really the best?
     # TODO: maybe adjust learning rate in training? http://pytorch.org/docs/master/optim.html#how-to-adjust-learning-rate
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    plot_x = []
+    plot_y = []
     for i, data in enumerate(train_loader):
         images = data['image']
         labels = data['label']
@@ -302,9 +304,11 @@ def train(epoch):
         optimizer.zero_grad()
         # forward + backward + optimize
         output = model(images)
-        labels = labels.type('torch.LongTensor').cuda()
+        # labels = labels.type('torch.LongTensor').cuda()
         loss =  cross_entropy2d(output, labels)  # TODO: find out the difference between this and F.cross_entropy. Seems identical.
         loss /= len(output)  # normalizing when training in batches
+        plot_x.append(len(plot_x)*epoch + 1)
+        plot_y.append(loss.data[0])
         if np.isnan(float(loss.data[0])):
             raise ValueError('loss is nan while training')
         loss.backward()
@@ -313,6 +317,12 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
+        if (i == (len(train_loader) - 1)):
+            training_loss = 'FCN32_trainloss.txt'
+            with open(training_loss, 'a') as f:
+                for i in range(0, len(plot_x)):
+                    f.write(" ".join([str(plot_x[i]), str(plot_y[i])]))
+                    f.write('\n')
 
 # evaluation tools
 def _fast_hist(label_true, label_pred, n_class):
