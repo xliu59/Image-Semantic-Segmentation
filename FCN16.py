@@ -16,6 +16,7 @@ import argparse
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
+import FCN32
 
 
 parser = argparse.ArgumentParser(description="Save or load models.")
@@ -145,9 +146,9 @@ def get_upsampling_weight(in_channels, out_channels, kernel_size):
     return torch.from_numpy(weight).float()
 
 
-class fcn_32(nn.Module):
+class fcn_16(nn.Module):
     def __init__(self, class_num=21):
-        super(fcn_32, self).__init__()
+        super(fcn_16, self).__init__()
         # conv1
         self.conv1_1 = nn.Conv2d(3, 64, 3, padding=100)
         self.relu1_1 = nn.ReLU(inplace=True)
@@ -189,6 +190,9 @@ class fcn_32(nn.Module):
         self.relu5_3 = nn.ReLU(inplace=True)
         self.pool5 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/32
 
+        # self.score_fr = nn.Conv2d(4096, class_num, 1)
+        # self.upscore = nn.ConvTranspose2d(class_num, class_num, 64, stride=32, bias=False)
+
         # fc6
         self.fc6 = nn.Conv2d(512, 4096, 7)
         self.relu6 = nn.ReLU(inplace=True)
@@ -200,8 +204,12 @@ class fcn_32(nn.Module):
         self.drop7 = nn.Dropout2d()
 
         self.score_fr = nn.Conv2d(4096, class_num, 1)
-        self.upscore = nn.ConvTranspose2d(class_num, class_num, 64, stride=32, bias=False)
+        self.score_pool4 = nn.Conv2d(512, class_num, 1)
 
+        self.upscore2 = nn.ConvTranspose2d(class_num, class_num, 4, stride=2, bias=False)
+        #output spatial size 18
+        self.upscore16 = nn.ConvTranspose2d(class_num, class_num, 32, stride=16, bias=False)
+        # output spatial size 304
         self._initialize_weights()
 
     def _initialize_weights(self):
@@ -212,8 +220,7 @@ class fcn_32(nn.Module):
                     m.bias.data.zero_()
             if isinstance(m, nn.ConvTranspose2d):
                 assert m.kernel_size[0] == m.kernel_size[1]
-                initial_weight = get_upsampling_weight(
-                    m.in_channels, m.out_channels, m.kernel_size[0])
+                initial_weight = get_upsampling_weight(m.in_channels, m.out_channels, m.kernel_size[0])
                 m.weight.data.copy_(initial_weight)
 
     def forward(self, x):
@@ -236,6 +243,11 @@ class fcn_32(nn.Module):
         h = self.relu4_3(self.conv4_3(h))
         h = self.pool4(h)
 
+        # h = self.upscore(h)
+        # h = h[:, :, 31:31 + x.size()[2], 31:31 + x.size()[3]].contiguous()
+
+        pool4 = h  # 1/16
+
         h = self.relu5_1(self.conv5_1(h))
         h = self.relu5_2(self.conv5_2(h))
         h = self.relu5_3(self.conv5_3(h))
@@ -248,9 +260,18 @@ class fcn_32(nn.Module):
         h = self.drop7(h)
 
         h = self.score_fr(h)
+        h = self.upscore2(h)
+        upscore2 = h  # 1/16
 
-        h = self.upscore(h)
-        h = h[:, :, 31:31 + x.size()[2], 31:31 + x.size()[3]].contiguous()
+        h = self.score_pool4(pool4)
+        h = h[:, :, 5:5 + upscore2.size()[2], 5:5 + upscore2.size()[3]]
+        score_pool4c = h  # 1/16
+
+        h = upscore2 + score_pool4c
+
+        h = self.upscore16(h)
+
+        h = h[:, :, 40:40 + x.size()[2], 40:40 + x.size()[3]].contiguous()
 
         return h
 
@@ -287,11 +308,25 @@ class fcn_32(nn.Module):
             l2.weight.data = l1.weight.data.view(l2.weight.size())
             l2.bias.data = l1.bias.data.view(l2.bias.size())
 
+    def copy_params_from_fcn32(self, fcn32):
+        for name, l1 in fcn32.named_children():
+            try:
+                l2 = getattr(self, name)
+                l2.weight  # skip ReLU / Dropout
+            except Exception:
+                continue
+            assert l1.weight.size() == l2.weight.size()
+            assert l1.bias.size() == l2.bias.size()
+            l2.weight.data = l1.weight.data
+            l2.bias.data = l1.bias.data
+
 def train(epoch):
     model.train()
     # TODO: is ADAM really the best?
     # TODO: maybe adjust learning rate in training? http://pytorch.org/docs/master/optim.html#how-to-adjust-learning-rate
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    plot_x = []
+    plot_y = []
     for i, data in enumerate(train_loader):
         images = data['image']
         labels = data['label']
@@ -302,9 +337,11 @@ def train(epoch):
         optimizer.zero_grad()
         # forward + backward + optimize
         output = model(images)
-        labels = labels.type('torch.LongTensor').cuda()
+        # labels = labels.type('torch.LongTensor').cuda()
         loss =  cross_entropy2d(output, labels)  # TODO: find out the difference between this and F.cross_entropy. Seems identical.
         loss /= len(output)  # normalizing when training in batches
+        plot_x.append(len(plot_x) + 1)
+        plot_y.append(loss.data[0])
         if np.isnan(float(loss.data[0])):
             raise ValueError('loss is nan while training')
         loss.backward()
@@ -313,6 +350,12 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
+        if (i==len(train_loader)):
+            training_loss = 'FCN16_trainloss.txt'
+            with open(training_loss, 'a') as f:
+                for i in range(0, len(plot_x)):
+                    f.write(" ".join([str(plot_x[i]), str(plot_y[i])]))
+                    f.write('\n')
 
 # evaluation tools
 def _fast_hist(label_true, label_pred, n_class):
@@ -390,21 +433,28 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
     # train_set.show_pair(10)
 
+    if args.load:
+        # load pretrained fcn_32 network
+        load_path = args.load
+        print('Load weights at {}'.format(load_path))
+        fcn_32 = FCN32.fcn_32(class_num=class_num)
+        fcn_32.load_state_dict(torch.load(load_path))
+        # fcn_16 instance
+        model = fcn_16(class_num=class_num)
+        # copy params from vgg16
+        model.copy_params_from_fcn32(fcn_32)
+    else:
+        # load pretrained vgg16 network
+        vgg16 = models.vgg16(pretrained=True)
+        # fcn_32 instance
+        model = fcn_16(class_num=class_num)
+        # copy params from vgg16
+        model.transfer_from_vgg16(vgg16)
+
     torch.manual_seed(1)
-    # load pretrained vgg16 network
-    vgg16 = models.vgg16(pretrained=True)
-    # fcn_32 instance
-    model = fcn_32(class_num=class_num)
-    # copy params from vgg16
-    model.transfer_from_vgg16(vgg16)
     if args.cuda:
         torch.cuda.manual_seed(1)
         model.cuda()
-
-    if args.load:
-        load_path = args.load
-        print('Loading weights from {}'.format(load_path))
-        model.load_state_dict(torch.load(load_path))
 
     for epoch in range(0, args.epoch):  # loop over the dataset multiple times
         if not args.disable_training:
