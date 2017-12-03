@@ -12,3 +12,12 @@ b. Training only with pretrained vgg:     ./FCN.py --save 16.pkl --enable_testin
 3. To train FCN8:  <br />
 a. Training using 16.pkl:                  ./FCN8.pkl --load 16.pkl --save 8.pkl --enable_testing<br />
 b. Training only with pretrained vgg:      ./FCN.py --save 8.pkl --enable_testing<br />
+
+
+# NOTE: 
+1. FCN32_old.py is the previous version we trained last time.<br />
+2. Changes:<br />
+a. rewrite the network, the previous one cannot be extended to FCN16 or FCN8<br />
+b. add normalization after totensor()<br />
+c. change the image size to 224 as this is the size works best for vgg? NOT SURE!!!<br />
+d. loss are save as txt files automatially, such as 32_trainingloss.txt 16_trainingloss_16.txt.
