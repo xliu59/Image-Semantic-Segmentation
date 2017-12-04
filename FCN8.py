@@ -98,10 +98,9 @@ class VOC12(Dataset):
     def visualization(self, img, lbl, lp):  # TODO
         # jm: img transpose to PIL.image, lbl doesn't change
         img = np.array(transforms.ToPILImage()(img))
-        lbl = np.array(transforms.ToPILImage()(lbl))
-        # print(np.bincount(lp.numpy().flatten()))
+        img = img.astype(np.uint8)
+        lbl = lbl.numpy().astype(np.uint8)
         lp = lp.numpy().astype(np.uint8)
-        # print(np.shape(lp),np.shape(lbl))
         plt.subplot(131)
         plt.imshow(img, interpolation='nearest')
         plt.subplot(132)
@@ -346,7 +345,7 @@ def train(epoch):
         # labels = labels.type('torch.LongTensor').cuda()
         loss =  cross_entropy2d(output, labels)  # TODO: find out the difference between this and F.cross_entropy. Seems identical.
         loss /= len(output)  # normalizing when training in batches
-        plot_x.append(len(plot_x)*epoch + 1)
+        plot_x.append(len(plot_x)+len(train_loader)*epoch + 1)
         plot_y.append(loss.data[0])
         if np.isnan(float(loss.data[0])):
             raise ValueError('loss is nan while training')
