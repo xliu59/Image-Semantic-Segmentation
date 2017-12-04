@@ -1,0 +1,3 @@
+FCN8:
+  * https://drive.google.com/open?id=1P8U9kzEK6rVlyHkPThTcg_g2KnZRUUCu
+  * Currently include 1e-4 and 1e-5, 10 epoches results. Bigger epoch number results on FCN8 are still training.
