@@ -2,6 +2,6 @@ FCN8:
   * https://drive.google.com/open?id=1P8U9kzEK6rVlyHkPThTcg_g2KnZRUUCu
   * Currently include 1e-4 and 1e-5, 10 and 30 epoches results. Bigger epoch number results on FCN8 are still training.
   
-FCN32:<\r>
-  * https://drive.google.com/open?id=1CTulFL9A-VyQ7br_4GMxJ4ZRNvym5Pwj <\r>
-  * Include 1e-5, 30 epochs result.<\r>
+FCN32:
+  * https://drive.google.com/open?id=1CTulFL9A-VyQ7br_4GMxJ4ZRNvym5Pwj 
+  * Include 1e-5, 30 epochs result.
