@@ -350,7 +350,7 @@ def label_accuracy_score(label_trues, label_preds, n_class=21):
     return acc, acc_cls, mean_iu, fwavacc
 
 
-def test(test_loader):
+def test(test_loader, epoch, log_file):
     model.eval()
     label_trues, label_preds = [], []
     print('Start testing')
@@ -384,6 +384,10 @@ def test(test_loader):
     Accuracy Class: {1}
     Mean IU: {2}
     FWAV Accuracy: {3}'''.format(*metrics))
+    with open(log_file, 'a') as f:
+        log = [epoch] + list(metrics)
+        log = map(str, log)
+        f.write(','.join(log) + '\n')
 
 if __name__ == "__main__":
 
@@ -420,9 +424,9 @@ if __name__ == "__main__":
             train(epoch)
         if args.enable_testing:
             print('Train_set testing result:')
-            test(train_loader)
+            test(train_loader, epoch, './train_log.csv')
             print('Test_set testing result:')
-            test(test_loader)
+            test(test_loader, epoch, './test_log.csv')
 
     if args.save is not None:
         save_path = args.save
