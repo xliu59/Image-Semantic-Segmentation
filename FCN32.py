@@ -37,6 +37,7 @@ parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('-s', '--save', type=str, help='save the model weights')
 parser.add_argument('-l', '--load', type=str, help='load the model weights')
+parser.add_argument('--logging', type=str, help='log tests')
 args = parser.parse_args()
 args.cuda = not args.disable_cuda and torch.cuda.is_available()
 class_num = 21
@@ -384,10 +385,12 @@ def test(test_loader, epoch, log_file):
     Accuracy Class: {1}
     Mean IU: {2}
     FWAV Accuracy: {3}'''.format(*metrics))
-    with open(log_file, 'a') as f:
-        log = [epoch] + list(metrics)
-        log = map(str, log)
-        f.write(','.join(log) + '\n')
+    if args.logging:
+        log_file = args.logging
+        with open(log_file, 'a') as f:
+            log = [epoch] + list(metrics)
+            log = map(str, log)
+            f.write(','.join(log) + '\n')
 
 if __name__ == "__main__":
 
