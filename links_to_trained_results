@@ -1,6 +1,13 @@
 FCN8:
   * https://drive.google.com/open?id=1P8U9kzEK6rVlyHkPThTcg_g2KnZRUUCu
   * Currently include 1e-4 and 1e-5, 10 and 30 epoches results.
+  * Best performance: 
+    (30 epoch on 1e-5 then 30 epoch on 1e-7)
+      * Accuracy: 88.40116107426242
+      * Accuracy Class: 70.46868805739112
+      * Mean IU: 56.1594300716702
+      * FWAV Accuracy: 80.50140495353165
+      
   
 FCN32:
   * https://drive.google.com/open?id=1CTulFL9A-VyQ7br_4GMxJ4ZRNvym5Pwj 
