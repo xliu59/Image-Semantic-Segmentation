@@ -420,11 +420,11 @@ def test(test_loader):
     Mean IU: {2}
     FWAV Accuracy: {3}'''.format(*metrics))
     if args.logging:
-    log_file = args.logging
-    with open(log_file, 'a') as f:
-        log = [epoch] + list(metrics)
-        log = map(str, log)
-        f.write(','.join(log) + '\n')
+        log_file = args.logging
+        with open(log_file, 'a') as f:
+            log = [epoch] + list(metrics)
+            log = map(str, log)
+            f.write(','.join(log) + '\n')
 
 
 if __name__ == "__main__":
