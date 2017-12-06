@@ -1,6 +1,6 @@
 FCN8:
   * https://drive.google.com/open?id=1P8U9kzEK6rVlyHkPThTcg_g2KnZRUUCu
-  * Currently include 1e-4 and 1e-5, 10 and 30 epoches results.
+  * Currently include 1e-4 1e-5, and 1e-1, 10 and 30 epoches results.
   * Best performance: 
     (30 epoch on 1e-5 then 30 epoch on 1e-7)
       * Accuracy: 88.40116107426242
