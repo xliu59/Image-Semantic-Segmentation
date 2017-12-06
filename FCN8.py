@@ -37,7 +37,7 @@ parser.add_argument('--enable_testing', action='store_true', default=False,
 parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('-s', '--save', type=str, help='save the model weights')
-parser.add_argument('-l16', '--load16', type=str, help='load the 16 model weights')
+parser.add_argument('-l_16', '--load_16', type=str, help='load the 16 model weights')
 parser.add_argument('-l', '--load', type=str, help='load the model weights')
 args = parser.parse_args()
 args.cuda = not args.disable_cuda and torch.cuda.is_available()
