@@ -439,9 +439,9 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
     # train_set.show_pair(10)
 
-    if args.load16:
+    if args.load:
         # load pretrained fcn_32 network
-        load_path = args.load16
+        load_path = args.load
         print('Load weights at {}'.format(load_path))
         fcn_16 = FCN16.fcn_16(class_num=class_num)
         fcn_16.load_state_dict(torch.load(load_path))
@@ -457,10 +457,10 @@ if __name__ == "__main__":
         # copy params from vgg16
         model.transfer_from_vgg16(vgg16)
 
-    if args.load:
-        load_path = args.load
-        print('Loading weights from {}'.format(load_path))
-        model.load_state_dict(torch.load(load_path))
+    # if args.load:
+    #     load_path = args.load
+    #     print('Loading weights from {}'.format(load_path))
+    #     model.load_state_dict(torch.load(load_path))
 
     torch.manual_seed(1)
     if args.cuda:
