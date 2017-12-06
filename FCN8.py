@@ -37,6 +37,7 @@ parser.add_argument('--enable_testing', action='store_true', default=False,
 parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('-s', '--save', type=str, help='save the model weights')
+parser.add_argument('-l16', '--load16', type=str, help='load the 32 model weights')
 parser.add_argument('-l', '--load', type=str, help='load the model weights')
 args = parser.parse_args()
 args.cuda = not args.disable_cuda and torch.cuda.is_available()
@@ -438,9 +439,9 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
     # train_set.show_pair(10)
 
-    if args.load:
+    if args.load16:
         # load pretrained fcn_32 network
-        load_path = args.load
+        load_path = args.load16
         print('Load weights at {}'.format(load_path))
         fcn_16 = FCN16.fcn_16(class_num=class_num)
         fcn_16.load_state_dict(torch.load(load_path))
@@ -455,6 +456,11 @@ if __name__ == "__main__":
         model = fcn_8(class_num=class_num)
         # copy params from vgg16
         model.transfer_from_vgg16(vgg16)
+
+    if args.load:
+        load_path = args.load
+        print('Loading weights from {}'.format(load_path))
+        model.load_state_dict(torch.load(load_path))
 
     torch.manual_seed(1)
     if args.cuda:
