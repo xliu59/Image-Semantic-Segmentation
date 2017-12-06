@@ -37,7 +37,7 @@ parser.add_argument('--enable_testing', action='store_true', default=False,
 parser.add_argument('--log_interval', type=int, default=20, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('-s', '--save', type=str, help='save the model weights')
-parser.add_argument('-l32', '--load32', type=str, help='load the 32 model weights')
+parser.add_argument('-lp', '--load_prev', type=str, help='load the 32 model weights')
 parser.add_argument('-l', '--load', type=str, help='load the model weights')
 args = parser.parse_args()
 args.cuda = not args.disable_cuda and torch.cuda.is_available()
@@ -433,9 +433,9 @@ if __name__ == "__main__":
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
     # train_set.show_pair(10)
 
-    if args.load32:
+    if args.load_prev:
         # load pretrained fcn_32 network
-        load_path = args.load32
+        load_path = args.load_prev
         print('Load weights at {}'.format(load_path))
         fcn_32 = FCN32.fcn_32(class_num=class_num)
         fcn_32.load_state_dict(torch.load(load_path))
