@@ -24,4 +24,8 @@ Instructions:  <br />
   e. Change the final upsampling layer, seems to work fine!
 3. Changes:
   1. Separate loading from previous network and loading from same model (`args.load32` and `args.load`).
+4. Training Log:
+   1. -lr 1e-7 -e 10 
+   2. -lr 1e-10 -e10
+
 

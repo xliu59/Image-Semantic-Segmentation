@@ -435,7 +435,7 @@ if __name__ == "__main__":
 
     if args.load32:
         # load pretrained fcn_32 network
-        load_path = args.load
+        load_path = args.load32
         print('Load weights at {}'.format(load_path))
         fcn_32 = FCN32.fcn_32(class_num=class_num)
         fcn_32.load_state_dict(torch.load(load_path))
