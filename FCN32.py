@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import torch
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
@@ -6,16 +9,13 @@ import torch.nn.functional as F
 import torchvision
 import torchvision.models as models
 from torchvision import transforms, utils
-
 import os
 import os.path as osp
 import argparse
-from __future__ import print_function
-
+# from __future__ import print_function
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
-import scipy
 
 
 parser = argparse.ArgumentParser(description="Save or load models.")
@@ -23,8 +23,8 @@ parser.add_argument('-e', '--epoch', type=int, default=10,
                     help='Number of iteration over the dataset to train')
 parser.add_argument('-b', '--batch_size', type=int, default=16,
                     metavar='N', help='mini-batch size (default: 128)')
-parser.add_argument('-tb', '--test_batch_size', type=int, default=12,
-                    metavar='N', help='test mini-batch size (default: 1)')
+parser.add_argument('-tb', '--test_batch_size', type=int, default=16,
+                    metavar='N', help='test mini-batch size (default: 16)')
 parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float,
                     metavar='LR', help='initial learning rate')
 parser.add_argument('--disable_cuda', action='store_true', default=False,
@@ -64,17 +64,16 @@ class VOC12(Dataset):
             image = self.input_transform(image)
         if self.target_transform is not None:
             label = self.target_transform(label)
+            label = np.array(label, dtype=np.int32)
+            label[label==255] = -1
+            label = torch.from_numpy(label).long()
         sample = {'image': image, 'label': label}
         return sample
 
     def __readfile__(self, txt_file):
         name_list = []
         with open(txt_file, 'r') as f:
-            i = 0
             for line in f:
-                i = i+1
-                if i == 24:
-                    break
                 data = line.strip()
                 data = data.split(' ')
                 name_list.append(data[0])
@@ -98,10 +97,9 @@ class VOC12(Dataset):
     def visualization(self, img, lbl, lp):  # TODO
         # jm: img transpose to PIL.image, lbl doesn't change
         img = np.array(transforms.ToPILImage()(img))
-        lbl = np.array(transforms.ToPILImage()(lbl))
-        # print(np.bincount(lp.numpy().flatten()))
+        img = img.astype(np.uint8)
+        lbl = lbl.numpy().astype(np.uint8)
         lp = lp.numpy().astype(np.uint8)
-        # print(np.shape(lp),np.shape(lbl))
         plt.subplot(131)
         plt.imshow(img, interpolation='nearest')
         plt.subplot(132)
@@ -149,66 +147,59 @@ def get_upsampling_weight(in_channels, out_channels, kernel_size):
 class fcn_32(nn.Module):
     def __init__(self, class_num=21):
         super(fcn_32, self).__init__()
-        self.conv = nn.Sequential(
-            # conv1
-            nn.Conv2d(3, 64, 3, padding=100),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/2
+        # conv1
+        self.conv1_1 = nn.Conv2d(3, 64, 3, padding=100)
+        self.relu1_1 = nn.ReLU(inplace=True)
+        self.conv1_2 = nn.Conv2d(64, 64, 3, padding=1)
+        self.relu1_2 = nn.ReLU(inplace=True)
+        self.pool1 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/2
 
-            # conv2
-            nn.Conv2d(64, 128, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 128, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/4
+        # conv2
+        self.conv2_1 = nn.Conv2d(64, 128, 3, padding=1)
+        self.relu2_1 = nn.ReLU(inplace=True)
+        self.conv2_2 = nn.Conv2d(128, 128, 3, padding=1)
+        self.relu2_2 = nn.ReLU(inplace=True)
+        self.pool2 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/4
 
-            # conv3
-            nn.Conv2d(128, 256, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/8
+        # conv3
+        self.conv3_1 = nn.Conv2d(128, 256, 3, padding=1)
+        self.relu3_1 = nn.ReLU(inplace=True)
+        self.conv3_2 = nn.Conv2d(256, 256, 3, padding=1)
+        self.relu3_2 = nn.ReLU(inplace=True)
+        self.conv3_3 = nn.Conv2d(256, 256, 3, padding=1)
+        self.relu3_3 = nn.ReLU(inplace=True)
+        self.pool3 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/8
 
-            # conv4
-            nn.Conv2d(256, 512, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/16
+        # conv4
+        self.conv4_1 = nn.Conv2d(256, 512, 3, padding=1)
+        self.relu4_1 = nn.ReLU(inplace=True)
+        self.conv4_2 = nn.Conv2d(512, 512, 3, padding=1)
+        self.relu4_2 = nn.ReLU(inplace=True)
+        self.conv4_3 = nn.Conv2d(512, 512, 3, padding=1)
+        self.relu4_3 = nn.ReLU(inplace=True)
+        self.pool4 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/16
 
-            # conv5
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(512, 512, 3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2, stride=2, ceil_mode=True),  # 1/16
-        )
+        # conv5
+        self.conv5_1 = nn.Conv2d(512, 512, 3, padding=1)
+        self.relu5_1 = nn.ReLU(inplace=True)
+        self.conv5_2 = nn.Conv2d(512, 512, 3, padding=1)
+        self.relu5_2 = nn.ReLU(inplace=True)
+        self.conv5_3 = nn.Conv2d(512, 512, 3, padding=1)
+        self.relu5_3 = nn.ReLU(inplace=True)
+        self.pool5 = nn.MaxPool2d(2, stride=2, ceil_mode=True)  # 1/32
 
-        self.f_conv = nn.Sequential(
-            # fully convolutional 1
-            nn.Conv2d(512, 4096, 7),
-            nn.ReLU(inplace=True),
-            nn.Dropout2d(),  # TODO: Does dropout probability matter?
+        # fc6
+        self.fc6 = nn.Conv2d(512, 4096, 7)
+        self.relu6 = nn.ReLU(inplace=True)
+        self.drop6 = nn.Dropout2d()
 
-            # fully convolutional 2
-            nn.Conv2d(4096, 4096, 1),
-            nn.ReLU(inplace=True),
-            nn.Dropout2d(),
-        )
+        # fc7
+        self.fc7 = nn.Conv2d(4096, 4096, 1)
+        self.relu7 = nn.ReLU(inplace=True)
+        self.drop7 = nn.Dropout2d()
 
-        self.up_sampling = nn.Sequential(
-            nn.Conv2d(4096, class_num, 1),
-            nn.ConvTranspose2d(class_num, class_num, 64,
-                               stride=32, bias=False)
-        )
+        self.score_fr = nn.Conv2d(4096, class_num, 1)
+        self.upscore = nn.ConvTranspose2d(class_num, class_num, 64, stride=32, bias=False)
 
         self._initialize_weights()
 
@@ -226,29 +217,82 @@ class fcn_32(nn.Module):
 
     def forward(self, x):
         h = x
-        h = self.conv(h)
-        h = self.f_conv(h)
-        h = self.up_sampling(h)
-        h = h[:, :, 19:19 + x.size()[2], 19:19 + x.size()[3]].contiguous()
+        h = self.relu1_1(self.conv1_1(h))
+        h = self.relu1_2(self.conv1_2(h))
+        h = self.pool1(h)
+
+        h = self.relu2_1(self.conv2_1(h))
+        h = self.relu2_2(self.conv2_2(h))
+        h = self.pool2(h)
+
+        h = self.relu3_1(self.conv3_1(h))
+        h = self.relu3_2(self.conv3_2(h))
+        h = self.relu3_3(self.conv3_3(h))
+        h = self.pool3(h)
+
+        h = self.relu4_1(self.conv4_1(h))
+        h = self.relu4_2(self.conv4_2(h))
+        h = self.relu4_3(self.conv4_3(h))
+        h = self.pool4(h)
+
+        h = self.relu5_1(self.conv5_1(h))
+        h = self.relu5_2(self.conv5_2(h))
+        h = self.relu5_3(self.conv5_3(h))
+        h = self.pool5(h)
+
+        h = self.relu6(self.fc6(h))
+        h = self.drop6(h)
+
+        h = self.relu7(self.fc7(h))
+        h = self.drop7(h)
+
+        h = self.score_fr(h)
+
+        h = self.upscore(h)
+        h = h[:, :, 31:31 + x.size()[2], 31:31 + x.size()[3]].contiguous()
+
         return h
 
     def transfer_from_vgg16(self, vgg16):
-        for l1, l2 in zip(vgg16.features, self.conv):
+        features = [
+            self.conv1_1, self.relu1_1,
+            self.conv1_2, self.relu1_2,
+            self.pool1,
+            self.conv2_1, self.relu2_1,
+            self.conv2_2, self.relu2_2,
+            self.pool2,
+            self.conv3_1, self.relu3_1,
+            self.conv3_2, self.relu3_2,
+            self.conv3_3, self.relu3_3,
+            self.pool3,
+            self.conv4_1, self.relu4_1,
+            self.conv4_2, self.relu4_2,
+            self.conv4_3, self.relu4_3,
+            self.pool4,
+            self.conv5_1, self.relu5_1,
+            self.conv5_2, self.relu5_2,
+            self.conv5_3, self.relu5_3,
+            self.pool5,
+        ]
+        for l1, l2 in zip(vgg16.features, features):
             if isinstance(l1, nn.Conv2d) and isinstance(l2, nn.Conv2d):
                 assert l1.weight.size() == l2.weight.size()
                 assert l1.bias.size() == l2.bias.size()
                 l2.weight.data = l1.weight.data
                 l2.bias.data = l1.bias.data
-        for l1, l2 in zip(vgg16.classifier, self.f_conv):
-            if isinstance(l1, nn.Linear) and isinstance(l2, nn.Conv2d):
-                l2.weight.data = l1.weight.data.view(l2.weight.size())
-                l2.bias.data = l1.bias.data.view(l2.bias.size())
+        for i, name in zip([0, 3], ['fc6', 'fc7']):
+            l1 = vgg16.classifier[i]
+            l2 = getattr(self, name)
+            l2.weight.data = l1.weight.data.view(l2.weight.size())
+            l2.bias.data = l1.bias.data.view(l2.bias.size())
 
 def train(epoch):
     model.train()
     # TODO: is ADAM really the best?
     # TODO: maybe adjust learning rate in training? http://pytorch.org/docs/master/optim.html#how-to-adjust-learning-rate
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    plot_x = []
+    plot_y = []
     for i, data in enumerate(train_loader):
         images = data['image']
         labels = data['label']
@@ -259,9 +303,11 @@ def train(epoch):
         optimizer.zero_grad()
         # forward + backward + optimize
         output = model(images)
-        labels = labels.type('torch.LongTensor')
+        # labels = labels.type('torch.LongTensor').cuda()
         loss =  cross_entropy2d(output, labels)  # TODO: find out the difference between this and F.cross_entropy. Seems identical.
         loss /= len(output)  # normalizing when training in batches
+        plot_x.append(len(plot_x)+len(train_loader)*epoch + 1)
+        plot_y.append(loss.data[0])
         if np.isnan(float(loss.data[0])):
             raise ValueError('loss is nan while training')
         loss.backward()
@@ -270,6 +316,12 @@ def train(epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, i * len(images), len(train_loader.dataset),
                        100. * i / len(train_loader), loss.data[0]))
+        if (i == (len(train_loader) - 1)):
+            training_loss = 'FCN32_trainloss.txt'
+            with open(training_loss, 'a') as f:
+                for i in range(0, len(plot_x)):
+                    f.write(" ".join([str(plot_x[i]), str(plot_y[i])]))
+                    f.write('\n')
 
 # evaluation tools
 def _fast_hist(label_true, label_pred, n_class):
@@ -298,7 +350,7 @@ def label_accuracy_score(label_trues, label_preds, n_class=21):
     return acc, acc_cls, mean_iu, fwavacc
 
 
-def test():
+def test(test_loader):
     model.eval()
     label_trues, label_preds = [], []
     print('Start testing')
@@ -314,33 +366,36 @@ def test():
         # lbl_pred = output.data.max(1)[1].cpu().numpy()[:, :, :]
         lbl_pred = output.data.max(1)[1].cpu()
         lbl_true = labels.data.cpu()
+        # if i==0:
+        #     print("bincount pre:",np.bincount(lbl_pred.numpy().flatten()))
+        #     print("bincount true:",np.bincount(lbl_true.type('torch.LongTensor').numpy().flatten()))
         for img, lt, lp in zip(imgs, lbl_true, lbl_pred):
             # test_loader.dataset.visualization(img, lt, lp)
             lt = lt.numpy()
             lp = lp.numpy()
             label_trues.append(lt)
             label_preds.append(lp)
-        if i % args.log_interval == 0:
             #print(np.shape(label_trues), np.shape(label_preds))
-            metrics = label_accuracy_score( label_trues, label_preds, n_class=class_num )
-            metrics = np.array(metrics)
-            metrics *= 100
-            print('''\
-            Accuracy: {0}
-            Accuracy Class: {1}
-            Mean IU: {2}
-            FWAV Accuracy: {3}'''.format(*metrics))
+    metrics = label_accuracy_score(label_trues, label_preds, n_class=class_num )
+    metrics = np.array(metrics)
+    metrics *= 100
+    print('''\
+    Accuracy: {0}
+    Accuracy Class: {1}
+    Mean IU: {2}
+    FWAV Accuracy: {3}'''.format(*metrics))
 
 if __name__ == "__main__":
 
-    trans = transforms.Compose([transforms.Scale((227, 227)), transforms.ToTensor()])
-    train_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
-    train_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/train.txt'
-    train_set = VOC12(train_data_root_dir, train_data_txt_dir, input_transform=trans, target_transform=trans)
+    trans_image = transforms.Compose([transforms.Scale((224, 224)), transforms.ToTensor(), transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
+    trans_target = transforms.Compose([transforms.Scale((224, 224))])
+    train_data_root_dir = './VOC2012'
+    train_data_txt_dir = './VOC2012/ImageSets/Segmentation/train.txt'
+    train_set = VOC12(train_data_root_dir, train_data_txt_dir, input_transform=trans_image, target_transform=trans_target)
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
-    test_data_root_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012'
-    test_data_txt_dir = '/media/jm/000B48300008D6EB/datasets/VOCdevkit/VOC2012/ImageSets/Segmentation/val.txt'
-    test_set = VOC12(test_data_root_dir, test_data_txt_dir, input_transform=trans, target_transform=trans)
+    test_data_root_dir = './VOC2012'
+    test_data_txt_dir = './VOC2012/ImageSets/Segmentation/val.txt'
+    test_set = VOC12(test_data_root_dir, test_data_txt_dir, input_transform=trans_image, target_transform=trans_target)
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size, shuffle=True, num_workers=2)
     # train_set.show_pair(10)
 
@@ -351,21 +406,23 @@ if __name__ == "__main__":
     model = fcn_32(class_num=class_num)
     # copy params from vgg16
     model.transfer_from_vgg16(vgg16)
-    # if args.cuda:
-    #     torch.cuda.manual_seed(1)
-    #     model.cuda()
+    if args.cuda:
+        torch.cuda.manual_seed(1)
+        model.cuda()
 
     if args.load:
         load_path = args.load
         print('Loading weights from {}'.format(load_path))
         model.load_state_dict(torch.load(load_path))
 
-    for epoch in range(1):  # loop over the dataset multiple times
+    for epoch in range(0, args.epoch):  # loop over the dataset multiple times
         if not args.disable_training:
-             train(epoch)
+            train(epoch)
         if args.enable_testing:
-            test()
-
+            print('Train_set testing result:')
+            test(train_loader)
+            print('Test_set testing result:')
+            test(test_loader)
 
     if args.save is not None:
         save_path = args.save
