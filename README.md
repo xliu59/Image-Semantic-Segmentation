@@ -23,3 +23,9 @@ c. change the image size to 224 as this is the size works best for vgg? NOT SURE
 d. loss is saved as txt files automatially, such as 32_trainingloss.txt 16_trainingloss_16.txt.<br />
 e. Change the final upsampling layer, seems to work fine!
 
+		
+# VOC dataset download:		
+ http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar	
+ 
+# VOC segmentation download(300MB, we use this):
+ https://drive.google.com/open?id=1CTulFL9A-VyQ7br_4GMxJ4ZRNvym5Pwj
