@@ -1,4 +1,4 @@
-# Image Semantic Segmentaion		
+# Image Semantic Segmentation		
  A Computer Vision course project		
 
 Instructions:  <br />
