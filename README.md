@@ -1,7 +1,25 @@
-# Image Semantic Segmentation		
- A Computer Vision course project		
+# Seamless Image Cloning with Semantic Segmentation
 
-Instructions:  <br />
+## Contributors
+* Jiteng Mu
+* Tianshi Liao
+* Xiaoxiao Liu
+* Yuxiang Gao
+
+## Idea
+We propose an automated system to crop out certain objects, especially human, in a given photo and fuse the object into a new background to form a new photo. The first part of our work will focus on building and train a semantic segmentation model that features in detecting and recognizing the human figure in a photo, and cropping out according to its outline. For this part, our supervised semantic segmentation algorithm will be based on Fully Convolutional Networks (FCN). The second part of our focus of work, also the FUN part, will be stitching the cropped part into a new background image and try to create a new scene. Poisson Image Editing will be the main technique for this part, while some other blending methods might also be used, e.g. Feathering, The Laplacian Pyramid, Alpha Blending. This is useful in multiple photo editing scenarios, especially in portrait photo editing. An easy inverse of this method can be used to erase the unwanted objects from a photo.
+
+## Related CV topics
+* Fully Convolutional Networks for Semantic Segmentation
+* Poisson Image Editing
+
+## Use Case	
+With semantic segmentation, we will be able to separate human portrait from image and substitute the background easily. A simple use case would be allowing users to choose new background scene by preferences. Also, we can do portrait editing since we have already detected where the people are in an image. For instance, we will be able to adjust color, illumination of the object of interest without changing the rest of the background, which is sort of similar to what smart phones cameras can do nowadays. We can also use an inverse version of this function to eliminate undesired portions of an image.
+
+## To view our result
+We included all of our exploration process, model-building steps and results in a finalized paper: [Seamless Image Cloning with Semantic Segmentation](./Seamless%20Imag%20Cloning%20wit%20Semantic%20Segmentation.pdf)
+
+# Instructions:  <br />
 1. To train FCN32:<br />
                                           ./FCN32.py --save 32.pkl --enable_testing<br />
 
